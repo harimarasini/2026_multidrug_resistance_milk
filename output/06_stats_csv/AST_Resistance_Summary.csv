@@ -1,0 +1,31 @@
+"Organism","Antibiotic","n","S_n","I_n","R_n","S_pct","I_pct","R_pct"
+"E. coli","Ceftriaxone",8,8,0,0,100,0,0
+"E. coli","Cotrimoxazole",8,2,2,4,25,25,50
+"E. coli","Doxycycline",8,4,3,1,50,37.5,12.5
+"E. coli","Florfenicol",8,7,1,0,87.5,12.5,0
+"E. coli","Gentamycin",8,8,0,0,100,0,0
+"E. coli","Tetracycline",8,1,2,5,12.5,25,62.5
+"K,E,C","Ceftriaxone",7,7,0,0,100,0,0
+"K,E,C","Cotrimoxazole",7,2,2,3,28.6,28.6,42.9
+"K,E,C","Doxycycline",7,2,3,2,28.6,42.9,28.6
+"K,E,C","Florfenicol",7,7,0,0,100,0,0
+"K,E,C","Gentamycin",7,7,0,0,100,0,0
+"K,E,C","Tetracycline",7,1,2,4,14.3,28.6,57.1
+"Pseudomonas","Amikacin",6,5,0,1,83.3,0,16.7
+"Pseudomonas","Ceftriaxone",6,0,0,6,0,0,100
+"Pseudomonas","Ciprofloxacin",6,3,0,3,50,0,50
+"Pseudomonas","Florfenicol",6,0,0,6,0,0,100
+"Pseudomonas","Gentamycin",6,4,0,2,66.7,0,33.3
+"Pseudomonas","Levofloxacin",6,3,0,3,50,0,50
+"S. aureus","Ceftriaxone",11,11,0,0,100,0,0
+"S. aureus","Cotrimoxazole",11,6,3,2,54.5,27.3,18.2
+"S. aureus","Doxycycline",11,7,4,0,63.6,36.4,0
+"S. aureus","Gentamycin",11,11,0,0,100,0,0
+"S. aureus","Penicillin",11,0,0,11,0,0,100
+"S. aureus","Tetracycline",11,0,3,8,0,27.3,72.7
+"S. urberis","Ceftriaxone",18,18,0,0,100,0,0
+"S. urberis","Cotrimoxazole",18,10,5,3,55.6,27.8,16.7
+"S. urberis","Doxycycline",18,13,5,0,72.2,27.8,0
+"S. urberis","Gentamycin",18,18,0,0,100,0,0
+"S. urberis","Penicillin",18,18,0,0,100,0,0
+"S. urberis","Tetracycline",18,0,9,9,0,50,50

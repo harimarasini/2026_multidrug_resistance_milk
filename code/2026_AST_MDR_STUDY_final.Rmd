@@ -1,0 +1,705 @@
+---
+title: "2026_AST_MDR_STUDY"
+author: "HM"
+date: "2026-03-02"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(flextable)
+library(readr)
+library(readxl)
+
+raw <- read_xlsx("../data/2026_ast_data_amik.xlsx")
+
+head(raw)
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+colnames(raw) <- trimws(colnames(raw))
+cat("✔ File loaded:", nrow(raw), "rows x", ncol(raw), "columns\n")
+cat("  Columns:", paste(colnames(raw), collapse = ", "), "\n\n")
+```
+
+```{r, message=FALSE, warning=FALSE}
+id_col  <- "Isolate_ID"
+org_col <- "Bacteria"
+ab_cols <- setdiff(colnames(raw), c(id_col, org_col))
+
+ast_long <- raw %>%
+  rename(Isolate_ID = all_of(id_col),
+         Organism   = all_of(org_col)) %>%
+  pivot_longer(
+    cols      = all_of(ab_cols),
+    names_to  = "Antibiotic",
+    values_to = "Result"
+  ) %>%
+  filter(!is.na(Result)) %>%
+  mutate(
+    Result     = toupper(trimws(Result)),
+    Organism   = trimws(Organism),
+    Antibiotic = trimws(Antibiotic)
+  ) %>%
+  filter(Result %in% c("S", "I", "R")) %>%
+  mutate(Result = factor(Result, levels = c("S","I","R"), ordered = TRUE))
+
+cat("✔ Data reshaped:", nrow(ast_long), "observations (blanks excluded)\n")
+cat("  Organisms  :", paste(sort(unique(ast_long$Organism)), collapse = " | "), "\n")
+cat("  Antibiotics:", paste(sort(unique(ast_long$Antibiotic)), collapse = ", "), "\n\n")
+```
+
+# Antibiotics Tested per Organism
+
+```{r}
+tested_matrix <- ast_long %>%
+  distinct(Organism, Antibiotic) %>%
+  mutate(Tested = "Yes") %>%
+  pivot_wider(names_from  = Antibiotic,
+              values_from = Tested,
+              values_fill = "—")
+
+cat("Antibiotics tested per organism:\n")
+print(as.data.frame(tested_matrix), row.names = FALSE)
+cat("\n")
+```
+
+# Table 1 — Resistance Summary
+
+```{r, message=FALSE, warning=FALSE}
+summary_table <- ast_long %>%
+  group_by(Organism, Antibiotic) %>%
+  summarise(
+    n           = n(),
+    S_n         = sum(Result == "S"),
+    I_n         = sum(Result == "I"),
+    R_n         = sum(Result == "R"),
+    S_pct       = round(S_n / n * 100, 1),
+    I_pct       = round(I_n / n * 100, 1),
+    R_pct       = round(R_n / n * 100, 1),
+    NonSusc_pct = round((I_n + R_n) / n * 100, 1),
+    .groups = "drop"
+  ) %>%
+  arrange(Organism, Antibiotic) %>%
+  mutate(
+    S_cell  = paste0(S_n,  " (", S_pct,       "%)"),
+    I_cell  = paste0(I_n,  " (", I_pct,       "%)"),
+    R_cell  = paste0(R_n,  " (", R_pct,       "%)"),
+    NS_cell = paste0(NonSusc_pct, "%")
+  )
+
+# Display table (columns shown)
+display_t1 <- summary_table %>%
+  select(Organism, Antibiotic, n, S_cell, I_cell, R_cell, NS_cell, NonSusc_pct)
+
+# ── flextable ─────────────────────────────────────────────────────────
+ft1 <- display_t1 %>%
+  select(-NonSusc_pct) %>%
+  flextable() %>%
+  set_header_labels(
+    Organism   = "Organism",
+    Antibiotic = "Antibiotic",
+    n          = "n",
+    S_cell     = "Sensitive (%)",
+    I_cell     = "Intermediate (%)",
+    R_cell     = "Resistant (%)",
+    NS_cell    = "Non-Susceptible (%)"
+  ) %>%
+  add_header_lines("Table 1. Antimicrobial Susceptibility Profile by Organism") %>%
+  add_footer_lines("Non-Susceptible % = Intermediate + Resistant combined") %>%
+
+  # Merge repeated Organism cells
+  merge_v(j = "Organism") %>%
+  valign(j = "Organism", valign = "top") %>%
+
+  # Header styling
+  bg(part = "header", bg = "#2c3e50") %>%
+  color(part = "header", color = "white") %>%
+  bold(part = "header") %>%
+  fontsize(part = "header", size = 11) %>%
+
+  # Title row styling
+  bg(i = 1, part = "header", bg = "#1a252f") %>%
+  fontsize(i = 1, part = "header", size = 13) %>%
+
+  # Body styling
+  fontsize(part = "body", size = 10) %>%
+  bg(part = "body", bg = "white") %>%
+
+  # Alternating row stripes
+  bg(i = seq(2, nrow(display_t1), 2), bg = "#f8f9fa", part = "body") %>%
+
+  # Red: NonSusc = 100%
+  color(
+    i   = which(display_t1$NonSusc_pct == 100),
+    j   = "NS_cell",
+    color = "red"
+  ) %>%
+  bold(
+    i   = which(display_t1$NonSusc_pct == 100),
+    j   = "NS_cell"
+  ) %>%
+
+  # Orange: NonSusc 50–99%
+  color(
+    i   = which(display_t1$NonSusc_pct >= 50 & display_t1$NonSusc_pct < 100),
+    j   = "NS_cell",
+    color = "darkorange"
+  ) %>%
+  bold(
+    i   = which(display_t1$NonSusc_pct >= 50 & display_t1$NonSusc_pct < 100),
+    j   = "NS_cell"
+  ) %>%
+
+  # Alignment
+  align(j = c("n","S_cell","I_cell","R_cell","NS_cell"),
+        align = "center", part = "all") %>%
+  align(j = c("Organism","Antibiotic"), align = "left", part = "all") %>%
+
+  # Borders
+  border_outer(part = "all",
+               border = officer::fp_border(color = "#2c3e50", width = 2)) %>%
+  border_inner_h(part = "body",
+                 border = officer::fp_border(color = "#dee2e6", width = 0.5)) %>%
+
+  # Column widths
+  width(j = "Organism",   width = 1.3) %>%
+  width(j = "Antibiotic", width = 1.4) %>%
+  width(j = "n",          width = 0.4) %>%
+  width(j = "S_cell",  width = 1.2) %>%
+  width(j = "I_cell",  width = 1.5) %>%   # wider — "Intermediate (%)" is long
+  width(j = "R_cell",  width = 1.2) %>%
+  width(j = "NS_cell", width = 1.8) %>%   # wider — "Non-Susceptible (%)" is long %>%
+
+  # Font
+  font(fontname = "Arial", part = "all") %>%
+  padding(padding = 5, part = "body") %>%
+  fix_border_issues()
+
+ft1
+
+# ── Save high-res PNG ─────────────────────────────────────────────────
+save_as_image(ft1, path = "Table1_Resistance_Summary.png", res = 400)
+cat("✔ Saved: Table1_Resistance_Summary.png\n")
+```
+
+# Table 2 — MDR Assessment
+
+```{r, message=FALSE, warning=FALSE}
+mdr_table <- ast_long %>%
+  group_by(Organism, Isolate_ID) %>%
+  summarise(R_count = sum(Result == "R"), .groups = "drop") %>%
+  group_by(Organism) %>%
+  summarise(
+    n_isolates = n(),
+    MDR_n      = sum(R_count >= 3),
+    MDR_pct    = round(MDR_n / n_isolates * 100, 1),
+    .groups    = "drop"
+  )
+
+ft2 <- mdr_table %>%
+  flextable() %>%
+  set_header_labels(
+    Organism   = "Organism",
+    n_isolates = "Total Isolates",
+    MDR_n      = "MDR Isolates (n)",
+    MDR_pct    = "MDR (%)"
+  ) %>%
+  add_header_lines("Table 2. Multi-Drug Resistance (MDR) Assessment") %>%
+  add_footer_lines("Definition: Resistant (R) to 3 or more antibiotics") %>%
+
+  # Header
+  bg(part = "header", bg = "#2c3e50") %>%
+  color(part = "header", color = "white") %>%
+  bold(part = "header") %>%
+  fontsize(part = "header", size = 11) %>%
+  bg(i = 1, part = "header", bg = "#1a252f") %>%
+  fontsize(i = 1, part = "header", size = 13) %>%
+
+  # Body
+  fontsize(part = "body", size = 10) %>%
+  bg(part = "body", bg = "white") %>%
+  bg(i = seq(2, nrow(mdr_table), 2), bg = "#f8f9fa", part = "body") %>%
+
+  # Red: MDR >= 50%
+  color(i  = which(mdr_table$MDR_pct >= 50),
+        j  = "MDR_pct", color = "red") %>%
+  bold(i   = which(mdr_table$MDR_pct >= 50), j = "MDR_pct") %>%
+
+  # Orange: MDR > 0 and < 50%
+  color(i  = which(mdr_table$MDR_pct > 0 & mdr_table$MDR_pct < 50),
+        j  = "MDR_pct", color = "darkorange") %>%
+  bold(i   = which(mdr_table$MDR_pct > 0 & mdr_table$MDR_pct < 50),
+       j   = "MDR_pct") %>%
+
+  # Alignment
+  align(j = c("n_isolates","MDR_n","MDR_pct"),
+        align = "center", part = "all") %>%
+  align(j = "Organism", align = "left", part = "all") %>%
+
+  # Borders
+  border_outer(part = "all",
+               border = officer::fp_border(color = "#2c3e50", width = 2)) %>%
+  border_inner_h(part = "body",
+                 border = officer::fp_border(color = "#dee2e6", width = 0.5)) %>%
+
+  # Column widths
+  width(j = "Organism",   width = 1.5) %>%
+  width(j = c("n_isolates","MDR_n","MDR_pct"), width = 1.2) %>%
+
+  font(fontname = "Arial", part = "all") %>%
+  padding(padding = 6, part = "body") %>%
+  fix_border_issues()
+
+ft2
+
+save_as_image(ft2, path = "Table2_MDR_Assessment.png", res = 400)
+cat("✔ Saved: Table2_MDR_Assessment.png\n")
+```
+
+# Statistical Tests
+
+## Fisher's Exact / Chi-Square (Inter-organism)
+
+```{r, message=FALSE, warning=FALSE}
+
+organisms <- sort(unique(ast_long$Organism))
+pairs     <- combn(organisms, 2, simplify = FALSE)
+all_test_results <- list()
+
+for (pair in pairs) {
+  org1 <- pair[1]; org2 <- pair[2]
+  d1   <- ast_long %>% filter(Organism == org1)
+  d2   <- ast_long %>% filter(Organism == org2)
+  shared_abs <- intersect(unique(d1$Antibiotic), unique(d2$Antibiotic))
+  if (length(shared_abs) == 0) next
+
+  for (ab in shared_abs) {
+    v1  <- factor(d1$Result[d1$Antibiotic == ab], levels = c("S","I","R"))
+    v2  <- factor(d2$Result[d2$Antibiotic == ab], levels = c("S","I","R"))
+    tab <- rbind(table(v1), table(v2))
+    tab <- tab[, colSums(tab) > 0, drop = FALSE]
+    if (ncol(tab) < 2) next
+
+    expected   <- outer(rowSums(tab), colSums(tab)) / sum(tab)
+    use_fisher <- any(expected < 5)
+
+    if (use_fisher) {
+      res       <- fisher.test(tab, simulate.p.value = TRUE, B = 10000)
+      test_name <- "Fisher's Exact"
+      stat_str  <- "—"
+      p_val     <- res$p.value
+    } else {
+      res       <- chisq.test(tab)
+      test_name <- "Chi-Square"
+      stat_str  <- paste0("X2=", round(res$statistic, 2))
+      p_val     <- res$p.value
+    }
+
+    sig   <- ifelse(p_val < 0.001, "***",
+             ifelse(p_val < 0.01,  "**",
+             ifelse(p_val < 0.05,  "*", "ns")))
+    p_str <- ifelse(p_val < 0.001, "<0.001", as.character(round(p_val, 3)))
+
+    all_test_results[[paste(org1, org2, ab, sep = "|")]] <-
+      data.frame(
+        Organism_1 = org1, Organism_2 = org2, Antibiotic = ab,
+        Test       = test_name, Statistic  = stat_str,
+        p_value    = p_str,    Sig        = sig,
+        p_raw      = p_val,
+        stringsAsFactors = FALSE
+      )
+  }
+}
+
+test_df <- do.call(rbind, all_test_results) %>%
+  arrange(Organism_1, Antibiotic)
+
+ft3 <- test_df %>%
+  select(Organism_1, Organism_2, Antibiotic, Test, Statistic, p_value, Sig) %>%
+  flextable() %>%
+
+  # ── Column headers — capital italic P in P-value ────────────────────
+  set_header_labels(
+    Organism_1 = "Organism 1",
+    Organism_2 = "Organism 2",
+    Antibiotic = "Antibiotic",
+    Test       = "Test Used",
+    Statistic  = "Statistic",
+    p_value    = "P-value",          # capital P
+    Sig        = "Significance"
+  ) %>%
+
+  add_header_lines("Table 3. Inter-Organism Statistical Comparison") %>%
+
+  # ── Footer — italic capital P ─────────────────────────────────────
+  add_footer_lines(
+    as_paragraph(
+      as_chunk("Fisher's Exact: expected count < 5  |  Chi-Square: expected count \u2265 5  |  *** "),
+      as_i("P"), as_chunk("<0.001  |  ** "),
+      as_i("P"), as_chunk("<0.01  |  * "),
+      as_i("P"), as_chunk("<0.05  |  ns = not significant")
+    )
+  ) %>%
+
+  # ── Header styling ───────────────────────────────────────────────────
+  bg(part = "header", bg = "#2c3e50") %>%
+  color(part = "header", color = "white") %>%
+  bold(part = "header") %>%
+  fontsize(part = "header", size = 11) %>%
+  bg(i = 1, part = "header", bg = "#1a252f") %>%
+  fontsize(i = 1, part = "header", size = 13) %>%
+
+  # Italic capital P in column header row (row 2 = column label row)
+  italic(i = 2, j = "p_value", part = "header") %>%
+
+  # ── Body styling ─────────────────────────────────────────────────────
+  fontsize(part = "body", size = 10) %>%
+  bg(part = "body", bg = "white") %>%
+  bg(i = seq(2, nrow(test_df), 2), bg = "#f8f9fa", part = "body") %>%
+
+  # Red: ***
+  color(i = which(test_df$Sig == "***"), j = "Sig", color = "red") %>%
+  bold(i  = which(test_df$Sig == "***"), j = "Sig") %>%
+
+  # Orange: ** or *
+  color(i = which(test_df$Sig %in% c("**","*")), j = "Sig", color = "darkorange") %>%
+  bold(i  = which(test_df$Sig %in% c("**","*")), j = "Sig") %>%
+
+  # Italic P in p_value body column
+  italic(j = "p_value", part = "body") %>%
+
+  # ── Alignment ────────────────────────────────────────────────────────
+  align(j     = c("Test","Statistic","p_value","Sig"),
+        align = "center", part = "all") %>%
+  align(j     = c("Organism_1","Organism_2","Antibiotic"),
+        align = "left", part = "all") %>%
+
+  # ── Borders ──────────────────────────────────────────────────────────
+  border_outer(part   = "all",
+               border = officer::fp_border(color = "#2c3e50", width = 2)) %>%
+  border_inner_h(part   = "body",
+                 border = officer::fp_border(color = "#dee2e6", width = 0.5)) %>%
+
+  # ── Column widths ────────────────────────────────────────────────────
+  width(j = c("Organism_1","Organism_2"), width = 1.3) %>%
+  width(j = "Antibiotic",                width = 1.2) %>%
+  width(j = "Test",                      width = 1.2) %>%
+  width(j = "Statistic",                 width = 1.0) %>%
+  width(j = "p_value",                   width = 0.8) %>%
+  width(j = "Sig",                       width = 0.9) %>%
+
+  font(fontname = "Arial", part = "all") %>%
+  padding(padding = 5, part = "body") %>%
+  fix_border_issues()
+
+ft3
+
+flextable::save_as_image(ft3, path = "Table3_Statistical_Tests.png", res = 400)
+cat("✔ Saved: Table3_Statistical_Tests.png\n")
+```
+
+
+
+## Kruskal-Wallis Test (Within-organism)
+
+```{r, message=FALSE, warning=FALSE}
+
+ast_long <- ast_long %>%
+  mutate(Score = as.integer(Result) - 1)  # S=0, I=1, R=2
+
+kw_results <- list()
+
+for (org in sort(unique(ast_long$Organism))) {
+  sub     <- ast_long %>% filter(Organism == org)
+  ab_list <- unique(sub$Antibiotic)
+  groups  <- lapply(ab_list, function(ab) sub$Score[sub$Antibiotic == ab])
+  vary    <- sapply(groups, function(g) length(unique(g)) > 1)
+  groups  <- groups[vary]
+  labels  <- ab_list[vary]
+  if (length(groups) < 2) next
+
+  res   <- kruskal.test(groups)
+  sig   <- ifelse(res$p.value < 0.001, "***",
+           ifelse(res$p.value < 0.01,  "**",
+           ifelse(res$p.value < 0.05,  "*", "ns")))
+  p_str <- ifelse(res$p.value < 0.001, "<0.001",
+                  formatC(res$p.value, format = "f", digits = 4))
+
+  kw_results[[org]] <- data.frame(
+    Organism           = org,
+    H_statistic        = round(res$statistic, 2),
+    df                 = res$parameter,
+    p_value            = p_str,
+    Significance       = sig,
+    Antibiotics_Tested = paste(labels, collapse = ", "),
+    stringsAsFactors   = FALSE
+  )
+}
+
+kw_df <- do.call(rbind, kw_results)
+
+ft4 <- kw_df %>%
+  flextable() %>%
+
+  # ── Column headers — capital italic P in P-value ────────────────────
+  set_header_labels(
+    Organism           = "Organism",
+    H_statistic        = "H Statistic",
+    df                 = "df",
+    p_value            = "P-value",          # capital P
+    Significance       = "Significance",
+    Antibiotics_Tested = "Antibiotics Tested"
+  ) %>%
+
+  add_header_lines("Table 4. Kruskal-Wallis Test (Within-Organism, Across Antibiotics)") %>%
+
+  # ── Footer — italic capital P ────────────────────────────────────────
+  add_footer_lines(
+    as_paragraph(
+      as_chunk("Ordinal scores: S=0, I=1, R=2  |  *** "),
+      as_i("P"), as_chunk("<0.001  |  ** "),
+      as_i("P"), as_chunk("<0.01  |  * "),
+      as_i("P"), as_chunk("<0.05  |  ns = not significant")
+    )
+  ) %>%
+
+  # ── Header styling ───────────────────────────────────────────────────
+  bg(part = "header", bg = "#2c3e50") %>%
+  color(part = "header", color = "white") %>%
+  bold(part = "header") %>%
+  fontsize(part = "header", size = 11) %>%
+  bg(i = 1, part = "header", bg = "#1a252f") %>%
+  fontsize(i = 1, part = "header", size = 13) %>%
+
+  # Italic capital P in column header row (row 2 = actual column labels)
+  italic(i = 2, j = "p_value", part = "header") %>%
+
+  # ── Body styling ─────────────────────────────────────────────────────
+  fontsize(part = "body", size = 10) %>%
+  bg(part = "body", bg = "white") %>%
+  bg(i = seq(2, nrow(kw_df), 2), bg = "#f8f9fa", part = "body") %>%
+
+  # Red: ***
+  color(i = which(kw_df$Significance == "***"),
+        j = "Significance", color = "red") %>%
+  bold(i  = which(kw_df$Significance == "***"),
+       j  = "Significance") %>%
+
+  # Orange: ** or *
+  color(i = which(kw_df$Significance %in% c("**", "*")),
+        j = "Significance", color = "darkorange") %>%
+  bold(i  = which(kw_df$Significance %in% c("**", "*")),
+       j  = "Significance") %>%
+
+  # Italic P in p_value body column
+  italic(j = "p_value", part = "body") %>%
+
+  # ── Alignment ────────────────────────────────────────────────────────
+  align(j     = c("H_statistic", "df", "p_value", "Significance"),
+        align = "center", part = "all") %>%
+  align(j     = c("Organism", "Antibiotics_Tested"),
+        align = "left", part = "all") %>%
+
+  # ── Borders ──────────────────────────────────────────────────────────
+  border_outer(part   = "all",
+               border = officer::fp_border(color = "#2c3e50", width = 2)) %>%
+  border_inner_h(part   = "body",
+                 border = officer::fp_border(color = "#dee2e6", width = 0.5)) %>%
+
+  # ── Column widths ────────────────────────────────────────────────────
+  width(j = "Organism",           width = 1.3) %>%
+  width(j = "H_statistic",        width = 1.0) %>%
+  width(j = "df",                 width = 0.5) %>%
+  width(j = "p_value",            width = 0.8) %>%
+  width(j = "Significance",       width = 1.0) %>%
+  width(j = "Antibiotics_Tested", width = 3.0) %>%
+
+  font(fontname = "Arial", part = "all") %>%
+  padding(padding = 6, part = "body") %>%
+  fix_border_issues()
+
+ft4
+
+flextable::save_as_image(ft4, path = "Table4_KruskalWallis.png", res = 400)
+cat("✔ Saved: Table4_KruskalWallis.png\n")
+```
+
+
+
+
+
+# Figure 1 — Stacked Bar Chart with Significance Stars
+
+```{r, message=FALSE, warning=FALSE}
+
+# ── Plot data: Sensitive % only, drop zeros ───────────────────────────
+plot_data_s <- summary_table %>%
+  select(Organism, Antibiotic, S_pct) %>%
+  filter(S_pct > 0) %>%
+  left_join(
+    kw_df %>% select(Organism, p_value, Significance),
+    by = "Organism"
+  )
+
+# ── KW expression data: stars on top of italic P ─────────────────────
+# Renders as:      ***
+#            KW:    P  = <0.001
+kw_expr_data <- plot_data_s %>%
+  distinct(Organism, p_value, Significance) %>%
+  mutate(
+    expr_label = paste0(
+  "bold('KW: ')~italic(P)~bold('=", p_value, "')^bold('", Significance, "')")
+    )
+
+# ── Function: build one plot for one organism ─────────────────────────
+make_organism_plot <- function(org_name) {
+
+  d      <- plot_data_s  %>% filter(Organism == org_name)
+  kw_row <- kw_expr_data %>% filter(Organism == org_name)
+
+  ggplot(d, aes(x = Antibiotic, y = S_pct)) +
+
+    # Bars
+    geom_bar(
+      stat      = "identity",
+      fill      = "#0077BB",
+      color     = "white",
+      linewidth = 0.3,
+      width     = 0.65
+    ) +
+
+    # Percentage label on top of each bar
+    geom_text(
+      aes(label = paste0(S_pct, "%")),
+      vjust    = -0.6,
+      size     = 4.0,
+      fontface = "bold",
+      color    = "#1d3557"
+    ) +
+
+    # KW label — top right, above 100% line, stars on top of P
+    geom_text(
+      data        = kw_row,
+      aes(x = Inf, y = 113, label = expr_label),
+      inherit.aes = FALSE,
+      hjust       = 1.04,
+      vjust       = 0.5,
+      size        = 3.8,
+      color       = "#cc3311",
+      parse       = TRUE
+    ) +
+
+    # 100% reference line
+    geom_hline(
+      yintercept = 100,
+      linewidth  = 0.35,
+      linetype   = "dashed",
+      color      = "#aaaaaa"
+    ) +
+
+    scale_y_continuous(
+      limits = c(0, 120),
+      breaks = c(0, 25, 50, 75, 100),
+      labels = scales::label_percent(scale = 1),
+      expand = expansion(mult = c(0, 0))
+    ) +
+
+    scale_x_discrete(expand = expansion(add = 0.6)) +
+
+    labs(
+      title   = org_name,
+      x       = "Antibiotic",
+      y       = "Sensitive Isolates (%)",
+      caption = bquote(atop(
+        bold("Kruskal-Wallis test (ordinal scores: S=0, I=1, R=2)"),
+        "***" ~ italic(P) < 0.001 ~ "|  **" ~ italic(P) < 0.01 ~ "|  *" ~ italic(P) < 0.05 ~ "|  ns = not significant"
+      ))
+    ) +
+
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.background    = element_rect(fill = "white", color = NA),
+      panel.background   = element_rect(fill = "white", color = NA),
+      panel.border       = element_rect(fill = NA, color = "#cccccc",
+                                        linewidth = 0.5),
+      panel.grid.major.y = element_line(color = "#eeeeee", linewidth = 0.5),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+
+      axis.text.x   = element_text(angle = 38, hjust = 1,
+                                    size  = 11, color = "#111111",
+                                    face  = "bold"),
+      axis.title.x  = element_text(size  = 12, color = "#111111",
+                                    face  = "bold",
+                                    margin = margin(t = 10)),
+      axis.text.y   = element_text(size  = 11, color = "#111111",
+                                    face  = "bold"),
+      axis.title.y  = element_text(size  = 12, color = "#111111",
+                                    face  = "bold",
+                                    margin = margin(r = 10)),
+
+      axis.ticks        = element_line(color = "#333333", linewidth = 0.4),
+      axis.ticks.length = unit(0.2, "cm"),
+
+      plot.title   = element_text(face  = "bold", size = 15,
+                                   color = "#1d3557", hjust = 0.5,
+                                   margin = margin(b = 10)),
+      plot.caption = element_text(size  = 8, color = "#888888",
+                                   hjust = 0, margin = margin(t = 10)),
+      plot.margin  = margin(20, 30, 16, 20)
+    )
+}
+
+# ── Loop: save one PNG per organism ───────────────────────────────────
+organisms_list <- sort(unique(plot_data_s$Organism))
+
+for (org in organisms_list) {
+
+  p_org      <- make_organism_plot(org)
+  clean_name <- gsub("[^A-Za-z0-9]", "_", org)
+  filename   <- paste0("Figure_Sensitive_", clean_name, ".png")
+
+  ggsave(
+    filename = filename,
+    plot     = p_org,
+    width    = 7,
+    height   = 6,
+    dpi      = 400,
+    bg       = "white"
+  )
+  cat("✔ Saved:", filename, "\n")
+}
+
+cat("\n✔ All", length(organisms_list), "figures saved as individual PNGs\n")
+```
+
+
+
+# Export CSV Results
+
+```{r}
+write.csv(
+  summary_table %>% select(-NonSusc_pct, -S_cell, -I_cell, -R_cell, -NS_cell),
+  "AST_Resistance_Summary.csv", row.names = FALSE
+)
+write.csv(mdr_table,  "AST_MDR_Summary.csv",      row.names = FALSE)
+write.csv(test_df %>% select(-p_raw),
+          "AST_Statistical_Tests.csv",             row.names = FALSE)
+write.csv(kw_df,      "AST_KruskalWallis.csv",     row.names = FALSE)
+
+cat("✔ CSVs exported:\n")
+cat("  → AST_Resistance_Summary.csv\n")
+cat("  → AST_MDR_Summary.csv\n")
+cat("  → AST_Statistical_Tests.csv\n")
+cat("  → AST_KruskalWallis.csv\n\n")
+cat("✔ PNGs saved:\n")
+cat("  → Table1_Resistance_Summary.png\n")
+cat("  → Table2_MDR_Assessment.png\n")
+cat("  → Table3_Statistical_Tests.png\n")
+cat("  → Table4_KruskalWallis.png\n")
+cat("  → Figure1_AST_Barplot.png\n")
+```

@@ -1,0 +1,6 @@
+"Organism","H_statistic","df","p_value","Significance","Antibiotics_Tested"
+"E. coli",12.2,3,"0.0067","**","Tetracycline, Cotrimoxazole, Doxycycline, Florfenicol"
+"K,E,C",1.05,2,"0.5902","ns","Tetracycline, Cotrimoxazole, Doxycycline"
+"Pseudomonas",1.87,3,"0.5989","ns","Gentamycin, Ciprofloxacin, Levofloxacin, Amikacin"
+"S. aureus",15.91,2,"<0.001","***","Tetracycline, Cotrimoxazole, Doxycycline"
+"S. urberis",23.6,2,"<0.001","***","Tetracycline, Cotrimoxazole, Doxycycline"
