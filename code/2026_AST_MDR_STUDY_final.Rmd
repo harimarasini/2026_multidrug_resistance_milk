@@ -44,6 +44,7 @@ ast_long <- raw %>%
     Organism   = trimws(Organism),
     Antibiotic = trimws(Antibiotic)
   ) %>%
+  mutate(Organism = ifelse(Organism == "K,E,C", "Klebsiella", Organism)) %>%
   filter(Result %in% c("S", "I", "R")) %>%
   mutate(Result = factor(Result, levels = c("S","I","R"), ordered = TRUE))
 
